@@ -1,0 +1,1799 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Time Bloom</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#f5f0e8; font-family:'Segoe UI','Hiragino Sans',sans-serif; touch-action:none; user-select:none; -webkit-user-select:none; }
+
+#game-container { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; position:relative; overflow:hidden; }
+
+/* HUD */
+#hud { width:100%; max-width:420px; padding:6px 14px; display:flex; justify-content:space-between; align-items:center; z-index:10; background:rgba(255,255,255,0.85); border-radius:0 0 12px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+#timer-box { text-align:left; }
+#timer-label { font-size:12px; color:#4a8a5a; letter-spacing:1.5px; text-transform:uppercase; font-weight:600; }
+#timer { font-size:34px; font-weight:800; color:#1a3a2a; font-variant-numeric:tabular-nums; }
+#timer.danger { color:#e53935; animation: pulse-danger 0.5s infinite alternate; }
+@keyframes pulse-danger { to { opacity:0.5; } }
+
+#combo-box { text-align:center; }
+#combo { font-size:22px; font-weight:700; color:#e65100; opacity:0; transition: opacity 0.3s; }
+#combo.active { opacity:1; animation: combo-pop 0.3s ease-out; }
+@keyframes combo-pop { 0%{transform:scale(1.5);} 100%{transform:scale(1);} }
+
+#score-box { text-align:right; }
+#score-label { font-size:12px; color:#4a8a5a; letter-spacing:1.5px; text-transform:uppercase; font-weight:600; }
+#score { font-size:36px; font-weight:900; color:#1a3a2a; font-variant-numeric:tabular-nums; }
+
+/* High score banner */
+#highscore-banner { position:fixed; top:18%; left:50%; transform:translateX(-50%); z-index:90; font-size:28px; font-weight:900; letter-spacing:2px; opacity:0; pointer-events:none; text-align:center; white-space:nowrap; }
+#highscore-banner.show { animation: hs-appear 2.5s ease-out forwards; }
+@keyframes hs-appear { 0%{opacity:0;transform:translateX(-50%) scale(0.5);} 15%{opacity:1;transform:translateX(-50%) scale(1.2);} 30%{transform:translateX(-50%) scale(1);} 80%{opacity:1;} 100%{opacity:0;transform:translateX(-50%) translateY(-30px);} }
+.rainbow-text { background:linear-gradient(90deg,#e91e63,#ff9800,#4caf50,#1565c0,#7c4dff,#e91e63); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; background-size:200% 100%; animation: rainbow-shift 1s linear infinite; }
+@keyframes rainbow-shift { to { background-position:-200% 0; } }
+
+/* Canvas */
+#game-canvas { display:block; touch-action:none; border-radius:8px; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+
+/* Timer bar */
+#timer-bar-wrap { width:100%; max-width:420px; height:6px; background:rgba(0,0,0,0.08); border-radius:3px; margin-top:2px; overflow:hidden; }
+#timer-bar { height:100%; background:linear-gradient(90deg,#2e7d32,#4caf50); border-radius:3px; transition:width 0.1s linear; width:100%; }
+
+/* Growth Legend */
+#legend { width:100%; max-width:420px; display:flex; justify-content:center; gap:14px; padding:3px 0; font-size:11px; color:#556; }
+.legend-item { display:flex; align-items:center; gap:3px; }
+
+/* Overlays */
+.overlay { position:fixed; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(255,255,255,0.94); z-index:100; }
+.overlay h1 { font-size:42px; color:#2e7d32; margin-bottom:4px; }
+.overlay .subtitle { font-size:16px; color:#666; margin-bottom:30px; }
+.overlay .final-score { font-size:60px; font-weight:700; color:#e65100; margin:10px 0; }
+.overlay .final-label { font-size:14px; color:#888; letter-spacing:2px; text-transform:uppercase; }
+.overlay button { margin-top:24px; padding:14px 48px; font-size:18px; font-weight:600; border:none; border-radius:30px; cursor:pointer; transition:transform 0.15s,box-shadow 0.15s; }
+.overlay button:active { transform:scale(0.95); }
+#start-btn { background:linear-gradient(135deg,#4caf50,#2e7d32); color:#fff; box-shadow:0 4px 20px rgba(76,175,80,0.3); }
+#restart-btn { background:linear-gradient(135deg,#4caf50,#2e7d32); color:#fff; box-shadow:0 4px 20px rgba(76,175,80,0.3); }
+.overlay .how { max-width:320px; text-align:center; font-size:13px; color:#555; line-height:1.6; margin-bottom:20px; }
+.overlay .how b { color:#1a3a2a; }
+
+/* Score popup */
+.score-popup { position:absolute; pointer-events:none; font-weight:700; font-size:20px; color:#e65100; text-shadow:0 1px 3px rgba(0,0,0,0.15); z-index:50; animation:float-up 0.8s ease-out forwards; }
+@keyframes float-up { 0%{opacity:1;transform:translateY(0) scale(1);} 100%{opacity:0;transform:translateY(-60px) scale(1.3);} }
+
+/* Time bonus popup */
+.time-popup { position:absolute; pointer-events:none; font-weight:800; font-size:18px; color:#1565c0; text-shadow:0 1px 3px rgba(0,0,0,0.12); z-index:55; animation:float-up 1.2s ease-out forwards; white-space:nowrap; }
+
+/* Item UI */
+#item-bar { width:100%; max-width:420px; display:flex; justify-content:center; gap:8px; padding:4px 0; min-height:10px; }
+.item-inv-btn { padding:6px 14px; font-size:28px; border:2px solid #bbb; border-radius:12px; background:#fff; cursor:pointer; transition:all 0.15s; text-align:center; line-height:1; }
+.item-inv-btn:active { transform:scale(0.93); }
+.item-inv-btn.active { border-color:#e53935; background:#fff3f0; box-shadow:0 0 8px rgba(229,57,53,0.3); }
+.item-inv-btn .item-count { display:block; font-size:12px; font-weight:700; color:#555; margin-top:2px; }
+#item-select { position:fixed; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(255,255,255,0.95); z-index:110; }
+#item-select .item-title { font-size:20px; font-weight:700; color:#2e7d32; margin-bottom:20px; }
+.item-choice-btn { padding:16px 18px; font-size:22px; border:2px solid #4caf50; border-radius:14px; background:#fff; cursor:pointer; text-align:center; line-height:1.3; transition:all 0.15s; min-width:90px; }
+.item-choice-btn:active { transform:scale(0.93); background:#e8f5e9; }
+.item-choice-btn small { display:block; font-size:11px; color:#777; margin-top:4px; }
+#item-mode-hint { position:fixed; top:12%; left:50%; transform:translateX(-50%); z-index:60; font-size:16px; font-weight:700; color:#e53935; background:rgba(255,255,255,0.9); padding:8px 20px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1); display:none; }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="hud">
+    <div id="timer-box"><div id="timer-label">TIME</div><div id="timer">60.0</div></div>
+    <div id="combo-box"><div id="combo"></div></div>
+    <div id="score-box"><div id="score-label">SCORE</div><div id="score">0</div></div>
+  </div>
+  <div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+  <canvas id="game-canvas"></canvas>
+  <div id="legend">
+    <span class="legend-item"><canvas id="leg-sprout" width="20" height="20"></canvas> 10pt +1s</span>
+    <span class="legend-item"><canvas id="leg-leaf" width="20" height="20"></canvas> 30pt +2s</span>
+    <span class="legend-item"><canvas id="leg-flower" width="20" height="20"></canvas> 80pt +3s</span>
+    <span class="legend-item"><canvas id="leg-wilted" width="20" height="20"></canvas> 消不可</span>
+  </div>
+  <div id="highscore-banner"></div>
+  <div id="item-mode-hint"></div>
+
+  <!-- Item inventory bar -->
+  <div id="item-bar"></div>
+
+  <!-- Item selection overlay -->
+  <div id="item-select" style="display:none;">
+    <div class="item-title">⭐ アイテムを選んでください</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+      <button class="item-choice-btn" id="pick-vacuum">🧹<br>掃除機<small>2×2の枯花を除去</small></button>
+      <button class="item-choice-btn" id="pick-ice">❄️<br>氷<small>4×4を60秒停止</small></button>
+      <button class="item-choice-btn" id="pick-bomb">💣<br>爆弾<small>2×2を破壊</small></button>
+      <button class="item-choice-btn" id="pick-vortex">🌀<br>渦巻き<small>時間+30秒</small></button>
+      <button class="item-choice-btn" id="pick-lightning">⚡<br>雷<small>ランダム3-5個破壊</small></button>
+    </div>
+  </div>
+
+  <!-- Start Screen -->
+  <div class="overlay" id="start-screen">
+    <h1>🌸 Time Bloom</h1>
+    <div class="subtitle">育てるか、消すか。</div>
+    <div id="title-highscore" style="font-size:15px;color:#ffd700;margin-bottom:14px;"></div>
+    <div class="how">
+      スワイプでブロックを入れ替えて<br>
+      <b>同じ色を3つ以上</b>揃えると消えます。<br><br>
+      ブロックは時間で<b>芽→葉→花</b>と成長。<br>
+      育つほど<b>高得点＋時間延長</b>しますが<br>
+      枯れると<b>消せない障害物</b>（-5秒）に！<br>
+      ただし枯れた花同士は<b>ぴったり3つで消せます</b>（-100点）。<br><br>
+      <b>コンボ</b>で時間ボーナスが倍増。<br>
+      動かせる場所がなくなると<b>手詰まり</b>です。<br><br>
+      ⏱ 時間が<b>120秒</b>を超えるとアイテム獲得！<br>
+      🧹 <b>掃除機</b> — 2×2の枯れた花を除去<br>
+      ❄️ <b>氷</b> — 4×4の成長を60秒停止<br>
+      💣 <b>爆弾</b> — 2×2を破壊（時間加算なし）<br>
+      🌀 <b>渦巻き</b> — 時間を30秒回復<br>
+      ⚡ <b>雷</b> — ランダムに3〜5個破壊（枯花も可）
+    </div>
+    <button id="start-btn">🌱 はじめる</button>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div class="overlay" id="gameover-screen" style="display:none;">
+    <div id="gameover-reason" style="font-size:18px;color:#ff9800;margin-bottom:10px;font-weight:600;"></div>
+    <div class="final-label">SCORE</div>
+    <div class="final-score" id="final-score">0</div>
+    <div id="max-combo" style="color:#8ba;font-size:14px;margin-top:4px;"></div>
+    <div id="highscore-display" style="font-size:16px;margin-top:8px;color:#a0d4b8;"></div>
+    <button id="restart-btn">🌱 もう一度</button>
+  </div>
+</div>
+
+<script>
+// ===== CONSTANTS =====
+const COLS = 7, ROWS = 8;
+const TYPES = 5;
+const CLOCK_CHANCE = 0; // disabled for now
+const GROWTH_TIMES = [10000, 10000, 30000]; // ms: sprout 10s, leaf 10s, flower 30s
+const TOTAL_GROWTH = GROWTH_TIMES.reduce((a,b)=>a+b,0); // 50s total
+const WILT_WARNING = 15000; // last 15s of flower stage
+const INITIAL_TIME = 60;
+const MAX_TIME = 120;
+const SWAP_DURATION = 150;
+const FALL_SPEED = 0.015; // cells per ms
+const MATCH_ANIM = 250;
+
+const TYPE_COLORS = [
+  ['#ff6b8a','#e91e63'], // Rose
+  ['#ffca28','#f9a825'], // Sunflower
+  ['#b388ff','#7c4dff'], // Violet
+  ['#64b5f6','#1565c0'], // Hydrangea (dark blue)
+  ['#69f0ae','#00c853'], // Clover
+];
+// 3-shade palette: [sprout(pale), leaf(mid), flower(vivid), center]
+const TYPE_PALETTE = [
+  ['#ffc1cc','#ff6b8a','#e91e63','#ad1457'], // Rose
+  ['#fff3b0','#ffca28','#f57f17','#e65100'], // Sunflower
+  ['#d7c0f0','#b388ff','#7c4dff','#4a148c'], // Violet
+  ['#7bafd4','#1565c0','#0d47a1','#082a6b'], // Hydrangea (dark blue)
+  ['#b9f6ca','#69f0ae','#00c853','#1b5e20'], // Clover
+];
+const CLOCK_COLORS = ['#ffd54f','#ff8f00'];
+
+const GROWTH_EMOJI = ['🌱','🌿','🌸','🥀'];
+const GROWTH_SCORES = [10, 30, 80, 0];
+const CLOCK_TIME_BONUS = [2, 4, 8, -10];
+
+const COMBO_MULTIPLIERS = {
+  3: 1.5,
+  5: 'freeze',
+  8: 'refresh',
+  10: 'timebonus'
+};
+
+// Time bonus per growth stage when cleared (halved)
+const GROWTH_TIME_BONUS = [1, 2, 3, 0]; // sprout, leaf, flower, wilted
+
+// ===== GAME STATE =====
+let canvas, ctx;
+let cellSize, boardX, boardY;
+let grid = [];
+let gameTime = INITIAL_TIME;
+let gameScore = 0;
+let comboCount = 0;
+let maxCombo = 0;
+let gameRunning = false;
+let lastTime = 0;
+let freezeTimer = 0;
+let highScore = 0;
+let highScoreBeaten = false;
+
+// Items
+let inventory = []; // ['vacuum','ice','bomb']
+let activeItem = null; // currently selected item mode
+let itemSelectPending = false;
+let activeItemIndex = -1;
+let itemPreviewCol = -1, itemPreviewRow = -1;
+let itemPreviewing = false;
+
+// Input
+let touchStartX, touchStartY, touchStartCol, touchStartRow;
+let selectedCell = null;
+let swapping = false;
+let processing = false;
+
+// Particles
+let particles = [];
+
+// ===== BLOCK CLASS =====
+class Block {
+  constructor(type, col, row) {
+    this.type = type; // 0-4 plant, 5=clock
+    this.col = col;
+    this.row = row;
+    this.growth = 0; // 0=seed,1=sprout,2=bloom,3=wilted
+    this.growthTimer = 0;
+    this.x = col; // visual position (can differ during animation)
+    this.y = row;
+    this.scale = 1;
+    this.opacity = 1;
+    this.removing = false;
+    this.removeTimer = 0;
+    this.justPlaced = true;
+    this.placeTimer = 0;
+    this.frozenTimer = 0; // ms remaining of freeze
+  }
+  get isClock() { return this.type === TYPES; }
+  get isWilted() { return this.growth >= 3 && !this.isClock; }
+  get score() {
+    if(this.isClock) return 0;
+    return GROWTH_SCORES[this.growth] || 0;
+  }
+}
+
+// ===== INIT =====
+function init() {
+  canvas = document.getElementById('game-canvas');
+  ctx = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+
+  canvas.addEventListener('touchstart', onTouchStart, {passive:false});
+  canvas.addEventListener('touchmove', onTouchMove, {passive:false});
+  canvas.addEventListener('touchend', onTouchEnd, {passive:false});
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup', onMouseUp);
+
+  document.getElementById('start-btn').addEventListener('click', startGame);
+  document.getElementById('restart-btn').addEventListener('click', startGame);
+  document.getElementById('pick-vacuum').addEventListener('click', ()=>selectItem('vacuum'));
+  document.getElementById('pick-ice').addEventListener('click', ()=>selectItem('ice'));
+  document.getElementById('pick-bomb').addEventListener('click', ()=>selectItem('bomb'));
+  document.getElementById('pick-vortex').addEventListener('click', ()=>selectItem('vortex'));
+  document.getElementById('pick-lightning').addEventListener('click', ()=>selectItem('lightning'));
+  renderLegend();
+}
+
+function resize() {
+  const container = document.getElementById('game-container');
+  const hud = document.getElementById('hud');
+  const timerBarWrap = document.getElementById('timer-bar-wrap');
+  const legend = document.getElementById('legend');
+  const itemBar = document.getElementById('item-bar');
+  const usedH = hud.offsetHeight + (timerBarWrap?timerBarWrap.offsetHeight:0) + legend.offsetHeight + (itemBar?itemBar.offsetHeight:0) + 60;
+  const availW = Math.min(container.clientWidth, 420);
+  const availH = container.clientHeight - usedH;
+  cellSize = Math.floor(Math.min(availW / COLS, availH / ROWS));
+  cellSize = Math.max(cellSize, 30); // minimum
+  canvas.width = cellSize * COLS;
+  canvas.height = cellSize * ROWS;
+  boardX = (container.clientWidth - canvas.width) / 2;
+  boardY = hud.offsetHeight;
+  canvas.style.marginTop = '2px';
+}
+
+// ===== GAME LIFECYCLE =====
+function startGame() {
+  initAudio();
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('gameover-screen').style.display = 'none';
+  gameTime = INITIAL_TIME;
+  gameScore = 0;
+  comboCount = 0;
+  maxCombo = 0;
+  freezeTimer = 0;
+  particles = [];
+  processing = false;
+  swapping = false;
+  selectedCell = null;
+  highScoreBeaten = false;
+  inventory = [];
+  activeItem = null;
+  activeItemIndex = -1;
+  itemSelectPending = false;
+  renderItemBar();
+  document.getElementById('item-mode-hint').style.display = 'none';
+  document.getElementById('item-select').style.display = 'none';
+  document.getElementById('highscore-banner').className = '';
+  document.getElementById('highscore-banner').textContent = '';
+
+  initBoard();
+  // Remove initial matches and ensure valid moves exist
+  let safety = 0;
+  while((findMatches().length > 0 || !hasValidMoves()) && safety < 100) {
+    initBoard();
+    safety++;
+  }
+
+  gameRunning = true;
+  lastTime = performance.now();
+  updateHUD();
+  startBGM();
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame(reason) {
+  gameRunning = false;
+  stopBGM();
+  document.getElementById('gameover-reason').textContent = reason || '';
+  document.getElementById('final-score').textContent = gameScore.toLocaleString();
+  document.getElementById('max-combo').textContent = `最大コンボ: ${maxCombo}`;
+  const hsEl = document.getElementById('highscore-display');
+  if(gameScore > highScore) {
+    highScore = gameScore;
+    hsEl.innerHTML = '<span class="rainbow-text">🏆 NEW HIGH SCORE!</span>';
+  } else {
+    hsEl.textContent = `HIGH SCORE: ${highScore.toLocaleString()}`;
+  }
+  // Update title screen high score for next game
+  const titleHS = document.getElementById('title-highscore');
+  if(titleHS) titleHS.textContent = highScore > 0 ? `🏆 HIGH SCORE: ${highScore.toLocaleString()}` : '';
+  document.getElementById('gameover-screen').style.display = 'flex';
+}
+
+// ===== BOARD =====
+function initBoard() {
+  grid = [];
+  for(let c=0; c<COLS; c++) {
+    grid[c] = [];
+    for(let r=0; r<ROWS; r++) {
+      grid[c][r] = createBlock(c, r);
+    }
+  }
+}
+
+function createBlock(col, row) {
+  const isClock = Math.random() < CLOCK_CHANCE;
+  const type = isClock ? TYPES : Math.floor(Math.random() * TYPES);
+  const b = new Block(type, col, row);
+  return b;
+}
+
+// ===== MATCH DETECTION =====
+function blocksMatch(a, b) {
+  if(!a || !b || a.removing || b.removing) return false;
+  if(a.isWilted && b.isWilted) return true;
+  if(a.isWilted || b.isWilted) return false;
+  return a.type === b.type;
+}
+
+function findMatches() {
+  const matched = new Set();
+
+  // ── Normal blocks (3+) ──
+  // Horizontal
+  for(let r=0; r<ROWS; r++) {
+    for(let c=0; c<COLS-2; c++) {
+      const a = grid[c][r], b = grid[c+1][r], cc = grid[c+2][r];
+      if(a && b && cc && !a.isWilted && !b.isWilted && !cc.isWilted
+        && !a.removing && !b.removing && !cc.removing
+        && a.type === b.type && b.type === cc.type) {
+        matched.add(a); matched.add(b); matched.add(cc);
+      }
+    }
+  }
+  // Vertical
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS-2; r++) {
+      const a = grid[c][r], b = grid[c][r+1], cc = grid[c][r+2];
+      if(a && b && cc && !a.isWilted && !b.isWilted && !cc.isWilted
+        && !a.removing && !b.removing && !cc.removing
+        && a.type === b.type && b.type === cc.type) {
+        matched.add(a); matched.add(b); matched.add(cc);
+      }
+    }
+  }
+
+  // ── Wilted blocks (exactly 3 only) ──
+  // Horizontal runs
+  for(let r=0; r<ROWS; r++) {
+    let run = [];
+    for(let c=0; c<=COLS; c++) {
+      const b = c < COLS ? grid[c][r] : null;
+      if(b && b.isWilted && !b.removing) {
+        run.push(b);
+      } else {
+        if(run.length === 3) { run.forEach(x => matched.add(x)); }
+        run = [];
+      }
+    }
+  }
+  // Vertical runs
+  for(let c=0; c<COLS; c++) {
+    let run = [];
+    for(let r=0; r<=ROWS; r++) {
+      const b = r < ROWS ? grid[c][r] : null;
+      if(b && b.isWilted && !b.removing) {
+        run.push(b);
+      } else {
+        if(run.length === 3) { run.forEach(x => matched.add(x)); }
+        run = [];
+      }
+    }
+  }
+
+  return [...matched];
+}
+
+// ===== PROCESS MATCHES =====
+async function processMatches() {
+  if(processing) return;
+  processing = true;
+
+  let chainCombo = 0;
+  while(true) {
+    const matches = findMatches();
+    if(matches.length === 0) break;
+
+    chainCombo++;
+    comboCount++;
+    if(comboCount > maxCombo) maxCombo = comboCount;
+
+    // Sound effects
+    if(comboCount >= 2) playComboSound(comboCount);
+    else playMatchSound();
+
+    // Calculate score
+    let matchScore = 0;
+    let hasWilted = false;
+    for(const b of matches) {
+      if(b.isWilted) hasWilted = true;
+      else if(!b.isClock) matchScore += b.score;
+      b.removing = true;
+      b.removeTimer = MATCH_ANIM;
+      spawnParticles(b.col, b.row, b.type);
+    }
+
+    // Wilted penalty: -100 points
+    if(hasWilted) matchScore -= 100;
+
+    // Score combo multiplier
+    let scoreMult = 1;
+    if(comboCount >= 3) scoreMult = 1.5;
+    if(comboCount >= 5) scoreMult = 2;
+    if(comboCount >= 8) scoreMult = 3;
+    if(comboCount >= 10) scoreMult = 4;
+    matchScore = Math.floor(matchScore * scoreMult);
+    gameScore += matchScore;
+
+    // Time bonus: per-block growth bonus + extra block bonus, × combo
+    let baseTimeBonus = 0;
+    for(const b of matches) {
+      baseTimeBonus += GROWTH_TIME_BONUS[b.growth] || 0;
+    }
+    if(matches.length > 3) {
+      baseTimeBonus += (matches.length - 3) * 1;
+    }
+    const timeBonus = baseTimeBonus * comboCount;
+
+    if(timeBonus > 0) {
+      const newTime = gameTime + timeBonus;
+      if(newTime > MAX_TIME && !itemSelectPending) {
+        gameTime = MAX_TIME;
+        itemSelectPending = true;
+        showTimePopupAt(timeBonus, matches);
+        // Will show item selection after processMatches completes
+      } else {
+        gameTime = Math.min(newTime, MAX_TIME);
+        showTimePopupAt(timeBonus, matches);
+      }
+    }
+
+    // Combo freeze at 5
+    if(comboCount === 5) {
+      freezeTimer = 1000;
+    }
+
+    showScorePopup(matchScore, matches);
+    updateHUD();
+
+    await delay(MATCH_ANIM);
+
+    for(const b of matches) {
+      grid[b.col][b.row] = null;
+    }
+
+    await applyGravity();
+    await fillBoard();
+    await delay(80);
+  }
+
+  comboCount = 0;
+  processing = false;
+
+  // Deadlock check
+  if(gameRunning && !hasValidMoves()) {
+    playDeadlockSound();
+    await delay(500);
+    endGame('🚫 手詰まり！');
+    return;
+  }
+
+  // Item selection if time overflowed
+  if(itemSelectPending) {
+    itemSelectPending = false;
+    showItemSelection();
+  }
+}
+
+function applyGravity() {
+  return new Promise(resolve => {
+    let maxDist = 0;
+    for(let c=0; c<COLS; c++) {
+      let empty = 0;
+      for(let r=ROWS-1; r>=0; r--) {
+        if(!grid[c][r]) {
+          empty++;
+        } else if(empty > 0) {
+          const b = grid[c][r];
+          grid[c][r] = null;
+          grid[c][r+empty] = b;
+          b.row = r + empty;
+          // Animate: y will interpolate in render
+          if(empty > maxDist) maxDist = empty;
+        }
+      }
+    }
+    setTimeout(resolve, Math.min(maxDist * 60, 300));
+  });
+}
+
+function fillBoard() {
+  return new Promise(resolve => {
+    let filled = false;
+    for(let c=0; c<COLS; c++) {
+      let emptyAbove = 0;
+      for(let r=0; r<ROWS; r++) {
+        if(!grid[c][r]) emptyAbove++;
+      }
+      for(let r=0; r<ROWS; r++) {
+        if(!grid[c][r]) {
+          const b = createBlock(c, r);
+          b.y = r - emptyAbove; // start above
+          grid[c][r] = b;
+          filled = true;
+        }
+      }
+    }
+    setTimeout(resolve, filled ? 200 : 0);
+  });
+}
+
+// ===== SWAP =====
+async function trySwap(c1,r1,c2,r2) {
+  if(swapping || processing) return;
+  if(c2<0||c2>=COLS||r2<0||r2>=ROWS) return;
+  const a = grid[c1][r1], b = grid[c2][r2];
+  if(!a || !b) return;
+  if(a.isWilted || b.isWilted) return;
+
+  swapping = true;
+
+  // Swap in grid
+  grid[c1][r1] = b; grid[c2][r2] = a;
+  b.col=c1; b.row=r1; a.col=c2; a.row=r2;
+
+  await delay(SWAP_DURATION);
+
+  // Check if valid
+  const matches = findMatches();
+  if(matches.length === 0) {
+    // Swap back
+    grid[c1][r1] = a; grid[c2][r2] = b;
+    a.col=c1; a.row=r1; b.col=c2; b.row=r2;
+    await delay(SWAP_DURATION);
+    swapping = false;
+    return;
+  }
+
+  swapping = false;
+  comboCount = 0;
+  processMatches();
+}
+
+// ===== INPUT =====
+let isDragging = false;
+
+function getCellFromPos(px, py) {
+  const rect = canvas.getBoundingClientRect();
+  const x = px - rect.left;
+  const y = py - rect.top;
+  const col = Math.floor(x / cellSize);
+  const row = Math.floor(y / cellSize);
+  if(col<0||col>=COLS||row<0||row>=ROWS) return null;
+  return {col, row};
+}
+
+function onTouchStart(e) {
+  e.preventDefault();
+  if(!gameRunning) return;
+  const t = e.touches[0];
+  if(activeItem) {
+    const cell = getCellFromPos(t.clientX, t.clientY);
+    if(cell) {
+      itemPreviewing = true;
+      itemPreviewCol = cell.col;
+      itemPreviewRow = cell.row;
+    }
+    return;
+  }
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+  const cell = getCellFromPos(t.clientX, t.clientY);
+  if(cell) { touchStartCol = cell.col; touchStartRow = cell.row; }
+  isDragging = true;
+}
+function onTouchMove(e) {
+  e.preventDefault();
+  if(itemPreviewing && activeItem) {
+    const t = e.touches[0];
+    const cell = getCellFromPos(t.clientX, t.clientY);
+    if(cell) { itemPreviewCol = cell.col; itemPreviewRow = cell.row; }
+    return;
+  }
+  if(!isDragging || !gameRunning) return;
+  const t = e.touches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const threshold = cellSize * 0.3;
+  if(Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
+    isDragging = false;
+    let dc=0, dr=0;
+    if(Math.abs(dx) > Math.abs(dy)) dc = dx>0?1:-1;
+    else dr = dy>0?1:-1;
+    trySwap(touchStartCol, touchStartRow, touchStartCol+dc, touchStartRow+dr);
+  }
+}
+function onTouchEnd(e) {
+  e.preventDefault();
+  if(itemPreviewing && activeItem) {
+    itemPreviewing = false;
+    useItemAt(itemPreviewCol, itemPreviewRow);
+    itemPreviewCol = -1; itemPreviewRow = -1;
+    return;
+  }
+  isDragging = false;
+}
+
+function onMouseDown(e) {
+  if(!gameRunning) return;
+  if(activeItem) {
+    const cell = getCellFromPos(e.clientX, e.clientY);
+    if(cell) {
+      itemPreviewing = true;
+      itemPreviewCol = cell.col;
+      itemPreviewRow = cell.row;
+    }
+    return;
+  }
+  touchStartX = e.clientX; touchStartY = e.clientY;
+  const cell = getCellFromPos(e.clientX, e.clientY);
+  if(cell) { touchStartCol = cell.col; touchStartRow = cell.row; }
+  isDragging = true;
+}
+function onMouseMove(e) {
+  if(itemPreviewing && activeItem) {
+    const cell = getCellFromPos(e.clientX, e.clientY);
+    if(cell) { itemPreviewCol = cell.col; itemPreviewRow = cell.row; }
+    return;
+  }
+  if(!isDragging || !gameRunning) return;
+  const dx = e.clientX - touchStartX;
+  const dy = e.clientY - touchStartY;
+  const threshold = cellSize * 0.3;
+  if(Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
+    isDragging = false;
+    let dc=0, dr=0;
+    if(Math.abs(dx) > Math.abs(dy)) dc = dx>0?1:-1;
+    else dr = dy>0?1:-1;
+    trySwap(touchStartCol, touchStartRow, touchStartCol+dc, touchStartRow+dr);
+  }
+}
+function onMouseUp() {
+  if(itemPreviewing && activeItem) {
+    itemPreviewing = false;
+    useItemAt(itemPreviewCol, itemPreviewRow);
+    itemPreviewCol = -1; itemPreviewRow = -1;
+    return;
+  }
+  isDragging = false;
+}
+
+// ===== GAME LOOP =====
+function gameLoop(ts) {
+  if(!gameRunning) return;
+  const dt = ts - lastTime;
+  lastTime = ts;
+
+  // Timer (paused during item mode)
+  if(!activeItem) {
+    if(freezeTimer > 0) {
+      freezeTimer -= dt;
+    } else {
+      gameTime -= dt / 1000;
+    }
+  }
+  if(gameTime <= 0) {
+    gameTime = 0;
+    updateHUD();
+    endGame('⏰ タイムアップ！');
+    return;
+  }
+
+  // Growth (paused during item mode)
+  if(!activeItem) {
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS; r++) {
+      const b = grid[c][r];
+      if(!b || b.removing || b.growth >= 3) continue;
+      // Tick frozen timer
+      if(b.frozenTimer > 0) { b.frozenTimer -= dt; continue; }
+      if(freezeTimer > 0) continue;
+      b.growthTimer += dt;
+      const stageTime = GROWTH_TIMES[Math.min(b.growth, 2)];
+      if(b.growthTimer >= stageTime) {
+        b.growthTimer -= stageTime;
+        b.growth++;
+        if(b.growth <= 2) {
+          b.scale = 1.2;
+        }
+        if(b.growth >= 3) {
+          // Wilted penalty: -5 seconds
+          gameTime = Math.max(0, gameTime - 5);
+          showWiltPenalty(b.col, b.row);
+        }
+      }
+    }
+  }
+  } // end if(!activeItem) - growth pause
+
+  // Animate visual positions
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS; r++) {
+      const b = grid[c][r];
+      if(!b) continue;
+      // Smooth position interpolation
+      const speed = 0.15;
+      b.x += (b.col - b.x) * speed;
+      b.y += (b.row - b.y) * speed;
+      // Scale bounce back
+      if(b.scale > 1) b.scale += (1 - b.scale) * 0.1;
+      // Remove animation
+      if(b.removing) {
+        b.removeTimer -= dt;
+        b.scale = 1 + 0.3 * (1 - b.removeTimer / MATCH_ANIM);
+        b.opacity = Math.max(0, b.removeTimer / MATCH_ANIM);
+      }
+    }
+  }
+
+  // Particles
+  for(let i=particles.length-1; i>=0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= dt;
+    if(p.life <= 0) particles.splice(i,1);
+  }
+
+  updateHUD();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ===== RENDER =====
+function render() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Background grid
+  ctx.fillStyle = '#faf6f0';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 0.5;
+  for(let c=0; c<=COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c*cellSize,0); ctx.lineTo(c*cellSize,canvas.height); ctx.stroke();
+  }
+  for(let r=0; r<=ROWS; r++) {
+    ctx.beginPath(); ctx.moveTo(0,r*cellSize); ctx.lineTo(canvas.width,r*cellSize); ctx.stroke();
+  }
+
+  // Freeze overlay
+  if(freezeTimer > 0) {
+    ctx.fillStyle = 'rgba(100,200,255,0.08)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+
+  // Blocks
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS; r++) {
+      const b = grid[c][r];
+      if(!b) continue;
+      drawBlock(b);
+    }
+  }
+
+  // Frozen block overlay
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS; r++) {
+      const b = grid[c][r];
+      if(!b || b.frozenTimer <= 0) continue;
+      const bx = b.x * cellSize;
+      const by = b.y * cellSize;
+      ctx.globalAlpha = Math.min(0.22, b.frozenTimer / 15000);
+      ctx.fillStyle = '#90caf9';
+      ctx.fillRect(bx+1, by+1, cellSize-2, cellSize-2);
+      ctx.globalAlpha = 0.5;
+      ctx.font = `${cellSize*0.16}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('❄️', bx+cellSize/2, by+cellSize*0.15);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Item preview (dotted outline)
+  if(itemPreviewing && activeItem && itemPreviewCol >= 0) {
+    ctx.setLineDash([5,4]);
+    ctx.lineWidth = 2.5;
+    if(activeItem === 'vacuum') {
+      // 2×2 green outline
+      ctx.strokeStyle = '#2e7d32';
+      const sx = Math.min(itemPreviewCol, COLS-2);
+      const sy = Math.min(itemPreviewRow, ROWS-2);
+      ctx.strokeRect(sx*cellSize+1, sy*cellSize+1, 2*cellSize-2, 2*cellSize-2);
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = '#a5d6a7';
+      ctx.fillRect(sx*cellSize, sy*cellSize, 2*cellSize, 2*cellSize);
+      ctx.globalAlpha = 1;
+    } else if(activeItem === 'ice') {
+      // 4×4 blue outline
+      ctx.strokeStyle = '#1e88e5';
+      const sx = Math.max(0, Math.min(itemPreviewCol, COLS-4));
+      const sy = Math.max(0, Math.min(itemPreviewRow, ROWS-4));
+      ctx.strokeRect(sx*cellSize+1, sy*cellSize+1, 4*cellSize-2, 4*cellSize-2);
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = '#90caf9';
+      ctx.fillRect(sx*cellSize, sy*cellSize, 4*cellSize, 4*cellSize);
+      ctx.globalAlpha = 1;
+    } else if(activeItem === 'bomb') {
+      // 2×2 red outline
+      ctx.strokeStyle = '#e53935';
+      const sx = Math.min(itemPreviewCol, COLS-2);
+      const sy = Math.min(itemPreviewRow, ROWS-2);
+      ctx.strokeRect(sx*cellSize+1, sy*cellSize+1, 2*cellSize-2, 2*cellSize-2);
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = '#ffcdd2';
+      ctx.fillRect(sx*cellSize, sy*cellSize, 2*cellSize, 2*cellSize);
+      ctx.globalAlpha = 1;
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Particles
+  for(const p of particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x * cellSize + cellSize/2, p.y * cellSize + cellSize/2, p.size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawBlock(b) {
+  const cx = b.x * cellSize + cellSize/2;
+  const cy = b.y * cellSize + cellSize/2;
+  ctx.save();
+  ctx.globalAlpha = b.opacity;
+  if(b.isClock) drawClockBlock(b, cx, cy);
+  else drawPlantBlock(b, cx, cy);
+  ctx.restore();
+}
+
+// ── Utilities ──
+function lerpColor(a, b, t) {
+  const pa = [parseInt(a.slice(1,3),16),parseInt(a.slice(3,5),16),parseInt(a.slice(5,7),16)];
+  const pb = [parseInt(b.slice(1,3),16),parseInt(b.slice(3,5),16),parseInt(b.slice(5,7),16)];
+  const r = Math.round(pa[0]+(pb[0]-pa[0])*t), g = Math.round(pa[1]+(pb[1]-pa[1])*t), bl = Math.round(pa[2]+(pb[2]-pa[2])*t);
+  return `rgb(${r},${g},${bl})`;
+}
+function ease(t) { return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
+
+// ── Leaf shape (drawn from center outward) ──
+function drawLeafShape(cx, cy, size, angle, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  // Leaf path
+  function leafPath() {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(size*0.5, -size*0.45, size, 0);
+    ctx.quadraticCurveTo(size*0.5, size*0.45, 0, 0);
+  }
+  // Color pencil: layered semi-transparent fills
+  leafPath();
+  ctx.fillStyle = color;
+  ctx.globalAlpha *= 0.7;
+  ctx.fill();
+  // Second layer
+  ctx.translate(0.4, 0.2);
+  leafPath();
+  ctx.globalAlpha *= 0.5;
+  ctx.fill();
+  ctx.translate(-0.4, -0.2);
+  // Highlight streak
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(size*0.38, -size*0.08, size*0.22, size*0.08, -0.2, 0, Math.PI*2);
+  ctx.fill();
+  // Soft outline
+  leafPath();
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Color-pencil style plump petal ──
+function drawRoundPetal(cx, cy, dist, r, angle, color, lightColor) {
+  const px = cx + Math.cos(angle) * dist;
+  const py = cy + Math.sin(angle) * dist;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(angle + Math.PI);
+  const w = r * 1.15, h = r * 1.25;
+  // Plump petal path
+  function petalPath() {
+    ctx.beginPath();
+    ctx.moveTo(0, h*0.3);
+    ctx.bezierCurveTo(-w*1.0, h*0.15, -w*0.85, -h*0.7, 0, -h*0.45);
+    ctx.bezierCurveTo(w*0.85, -h*0.7, w*1.0, h*0.15, 0, h*0.3);
+  }
+  // Color pencil: layered semi-transparent fills for texture
+  petalPath();
+  ctx.fillStyle = color;
+  ctx.globalAlpha *= 0.7;
+  ctx.fill();
+  // Second layer slightly offset for pencil texture
+  ctx.save();
+  ctx.translate(0.5, 0.3);
+  petalPath();
+  ctx.globalAlpha *= 0.5;
+  ctx.fill();
+  ctx.restore();
+  // Light layer on top half
+  ctx.globalAlpha = ctx.globalAlpha / 0.35 * 0.3;
+  ctx.save();
+  petalPath();
+  ctx.clip();
+  ctx.fillStyle = lightColor || '#fff';
+  ctx.beginPath();
+  ctx.ellipse(-w*0.1, -h*0.2, w*0.6, h*0.4, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  // Soft sketchy outline
+  ctx.globalAlpha = 1;
+  petalPath();
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 1.0;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Clock block ──
+function drawClockBlock(b, cx, cy) {
+  const clockR = cellSize * (0.22 + b.growth * 0.07) * b.scale;
+  const grad = ctx.createRadialGradient(cx-clockR*0.2, cy-clockR*0.2, 0, cx, cy, clockR);
+  grad.addColorStop(0, CLOCK_COLORS[0]);
+  grad.addColorStop(1, CLOCK_COLORS[1]);
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx, cy, clockR, 0, Math.PI*2); ctx.fill();
+  const ringColors = ['#fff8','#ffc107','#ff9800','#f44336'];
+  ctx.strokeStyle = ringColors[b.growth];
+  ctx.lineWidth = b.growth >= 2 ? 3 : 2;
+  ctx.beginPath(); ctx.arc(cx, cy, clockR+2, 0, Math.PI*2); ctx.stroke();
+  const eSize = cellSize * (0.22 + b.growth * 0.06);
+  ctx.font = `${eSize}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('⏰', cx, cy - clockR*0.12);
+  const bonus = CLOCK_TIME_BONUS[b.growth];
+  ctx.font = `bold ${cellSize*0.15}px sans-serif`;
+  ctx.fillStyle = bonus >= 0 ? '#fff' : '#ff6b6b';
+  ctx.fillText((bonus>=0?'+':'')+bonus+'s', cx, cy + clockR*0.55);
+  for(let i=0; i<3; i++) {
+    ctx.fillStyle = i < b.growth ? '#fff' : 'rgba(255,255,255,0.25)';
+    ctx.beginPath(); ctx.arc(cx - 6 + i*6, cy + clockR + 6, 2, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ── Plant block: stemless, color-family approach ──
+function drawPlantBlock(b, cx, cy) {
+  const pal = TYPE_PALETTE[b.type]; // [pale, mid, vivid, center]
+  const half = cellSize / 2;
+  const now = performance.now();
+  const stageTime = GROWTH_TIMES[Math.min(b.growth, 2)];
+  const stageP = b.growth < 3 ? b.growthTimer / stageTime : 1;
+
+  // Continuous lifecycle progress 0→1 (sprout 0-0.2, leaf 0.2-0.4, flower 0.4-1.0)
+  let elapsed = 0;
+  for(let i = 0; i < Math.min(b.growth, 3); i++) elapsed += GROWTH_TIMES[i];
+  if(b.growth < 3) elapsed += b.growthTimer;
+  const totalP = b.growth >= 3 ? 1.0 : elapsed / TOTAL_GROWTH;
+
+  const sway = Math.sin(now * 0.002 + b.col * 1.7 + b.row * 0.9) * 0.06;
+
+  // ── PHASE 1: SPROUT (two leaves + short stem downward) ──
+  if(totalP < 0.28) {
+    const sprP = Math.min(1, totalP / 0.2);
+    const fadeOut = totalP > 0.2 ? 1 - (totalP-0.2)/0.08 : 1;
+    const sz = half * (0.82 + 0.10 * ease(sprP));
+    ctx.globalAlpha = b.opacity * fadeOut;
+    // Short stem downward
+    const stemLen = half * 0.40;
+    ctx.strokeStyle = '#4a8a3f';
+    ctx.lineWidth = Math.max(2, cellSize * 0.045);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy + stemLen);
+    ctx.stroke();
+    // Two leaves angled upward from top of stem
+    const rot = -Math.PI/2;
+    drawLeafShape(cx, cy, sz, -0.65 + rot + sway, pal[1]);
+    drawLeafShape(cx, cy, sz,  0.65 + rot + sway, pal[1]);
+    // Center joint
+    ctx.fillStyle = pal[2];
+    ctx.beginPath();
+    ctx.arc(cx, cy, sz*0.18*ease(sprP), 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = b.opacity;
+  }
+
+  // ── PHASE 2: LEAVES (4 leaves at diagonal angles) ──
+  if(totalP > 0.12 && totalP < 0.50) {
+    const leafP = Math.min(1, (totalP - 0.12) / 0.26);
+    const fadeOut = totalP > 0.42 ? 1 - (totalP-0.42)/0.08 : 1;
+    const leafCount = leafP < 0.3 ? 2 : (leafP < 0.6 ? 3 : 4);
+    const sz = half * (0.55 + 0.20 * ease(leafP));
+    ctx.globalAlpha = b.opacity * Math.max(0.3, fadeOut);
+    for(let i=0; i<leafCount; i++) {
+      // Diagonal: 45°, 135°, 225°, 315°
+      const angle = (i / leafCount) * Math.PI * 2 + Math.PI/4 + sway;
+      drawLeafShape(cx, cy, sz, angle, pal[1]);
+    }
+    ctx.fillStyle = pal[0];
+    ctx.beginPath();
+    ctx.arc(cx, cy, sz*0.20, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = b.opacity;
+  }
+
+  // ── BUD (transition to flower) ──
+  if(totalP > 0.32 && totalP < 0.45) {
+    const budP = ease(Math.min(1, (totalP - 0.32) / 0.08));
+    const budR = half * 0.1 * budP;
+    ctx.fillStyle = pal[2];
+    ctx.globalAlpha = b.opacity * (0.4 + budP * 0.5);
+    ctx.beginPath();
+    ctx.arc(cx, cy, budR, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = b.opacity;
+  }
+
+  // ── PHASE 3: FLOWER (round petals, big center — very distinct from pointed leaves) ──
+  if(totalP > 0.35) {
+    const flP = Math.min(1, (totalP - 0.35) / 0.12);
+    const openness = ease(flP);
+    const petalN = [5,8,6,7,5][b.type] || 5;
+    let pColor = pal[2];
+    let cColor = pal[3];
+    let lightC = pal[0];
+    let droopY = 0;
+    let flowerScale = openness;
+
+    // Wilt warning: 2 stages (totalP 0.70→0.85→1.0)
+    const wiltWarnStart = 0.70;
+    if(totalP > wiltWarnStart && totalP < 1.0) {
+      const warnP = (totalP - wiltWarnStart) / (1.0 - wiltWarnStart); // 0→1
+      const pulse = Math.sin(now * 0.006 * (1 + warnP * 2)) * 0.06 * warnP;
+
+      if(warnP < 0.5) {
+        // Stage 1: slight fade, type color still clear
+        const t = warnP / 0.5;
+        pColor = lerpColor(pal[2], '#b8a070', t * 0.25);
+        cColor = lerpColor(pal[3], '#8a7a50', t * 0.2);
+        lightC = lerpColor(pal[0], '#ddd0b8', t * 0.2);
+      } else {
+        // Stage 2: more faded, urgent
+        const t = (warnP - 0.5) / 0.5;
+        pColor = lerpColor(pal[2], '#9a8558', 0.25 + t * 0.25);
+        cColor = lerpColor(pal[3], '#6a5a38', 0.2 + t * 0.2);
+        lightC = lerpColor(pal[0], '#c0b090', 0.2 + t * 0.25);
+        flowerScale = openness * (1 - t * 0.06 + pulse);
+        droopY = half * t * 0.04;
+      }
+
+      // Pulsing warning ring
+      const ringAlpha = 0.3 + warnP * 0.5;
+      const ringPulse = Math.sin(now * 0.008 * (1 + warnP * 2)) * 0.15;
+      const ringColor = warnP < 0.5 ? `rgba(255,152,0,${ringAlpha + ringPulse})` : `rgba(244,67,54,${ringAlpha + ringPulse})`;
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, half * 0.48, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    // Fully wilted — clearly brown/grey
+    if(totalP >= 1.0) {
+      pColor = '#7a6a48';
+      cColor = '#4a3a20';
+      lightC = '#a09070';
+      droopY = half * 0.10;
+      flowerScale = Math.max(0.5, openness * 0.68);
+    }
+
+    // Glow when in full bloom
+    if(openness > 0.7 && totalP < wiltWarnStart) {
+      ctx.shadowColor = pal[2];
+      ctx.shadowBlur = 14 + Math.sin(now * 0.003) * 5;
+    }
+
+    // Plump petals filling to center
+    const dist = half * 0.26 * flowerScale;
+    const petalR = half * 0.38 * flowerScale;
+    for(let i=0; i<petalN; i++) {
+      const a = (i / petalN) * Math.PI * 2 + sway;
+      drawRoundPetal(cx, cy + droopY, dist, petalR, a, pColor, lightC);
+    }
+    ctx.shadowBlur = 0;
+
+    // Smaller anime center
+    const cr = half * 0.10 * flowerScale;
+    // Center fill with outline
+    ctx.fillStyle = cColor;
+    ctx.beginPath();
+    ctx.arc(cx, cy + droopY, cr, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.arc(cx, cy + droopY, cr, 0, Math.PI*2);
+    ctx.stroke();
+    // Star-shaped highlight (anime sparkle)
+    if(totalP < 1.0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      const sx = cx - cr*0.2, sy = cy + droopY - cr*0.2;
+      const ss = cr * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - ss);
+      ctx.lineTo(sx + ss*0.25, sy - ss*0.25);
+      ctx.lineTo(sx + ss, sy);
+      ctx.lineTo(sx + ss*0.25, sy + ss*0.25);
+      ctx.lineTo(sx, sy + ss);
+      ctx.lineTo(sx - ss*0.25, sy + ss*0.25);
+      ctx.lineTo(sx - ss, sy);
+      ctx.lineTo(sx - ss*0.25, sy - ss*0.25);
+      ctx.closePath();
+      ctx.fill();
+      // Small dot sparkle
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.arc(cx + cr*0.3, cy + droopY + cr*0.15, cr*0.12, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // ── WILTED OVERLAY ──
+  if(b.growth >= 3) {
+    ctx.setLineDash([3,3]);
+    ctx.strokeStyle = 'rgba(255,60,60,0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, half * 0.44, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    const s = half * 0.18;
+    ctx.strokeStyle = 'rgba(255,60,60,0.65)';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx-s,cy-s); ctx.lineTo(cx+s,cy+s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+s,cy-s); ctx.lineTo(cx-s,cy+s); ctx.stroke();
+  }
+
+  // ── SCORE LABEL ──
+  if(b.growth < 3) {
+    const labels = ['10','30','80'];
+    const lCols = ['rgba(0,0,0,0.22)','rgba(0,0,0,0.35)','#c67100'];
+    ctx.font = `bold ${cellSize*0.24}px sans-serif`;
+    ctx.fillStyle = lCols[b.growth];
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(labels[b.growth], cx, cy + half * 0.95);
+  }
+}
+
+// ===== PARTICLES =====
+function spawnParticles(col, row, type) {
+  const colors = type === TYPES ? CLOCK_COLORS : TYPE_COLORS[type] || ['#fff','#ccc'];
+  for(let i=0; i<8; i++) {
+    particles.push({
+      x: col + Math.random()*0.5-0.25,
+      y: row + Math.random()*0.5-0.25,
+      vx: (Math.random()-0.5)*0.3,
+      vy: (Math.random()-0.5)*0.3 - 0.15,
+      size: 2 + Math.random()*3,
+      color: colors[Math.floor(Math.random()*colors.length)],
+      life: 400 + Math.random()*300,
+      maxLife: 700
+    });
+  }
+}
+
+// ===== HUD =====
+function updateHUD() {
+  const timerEl = document.getElementById('timer');
+  timerEl.textContent = Math.max(0, gameTime).toFixed(1);
+  timerEl.className = gameTime < 10 ? 'danger' : '';
+
+  // Timer bar
+  const barPct = Math.max(0, Math.min(100, (gameTime / MAX_TIME) * 100));
+  const bar = document.getElementById('timer-bar');
+  bar.style.width = barPct + '%';
+  if(gameTime < 20) bar.style.background = 'linear-gradient(90deg,#c62828,#e53935)';
+  else bar.style.background = 'linear-gradient(90deg,#2e7d32,#4caf50)';
+
+  document.getElementById('score').textContent = gameScore.toLocaleString();
+
+  // High score check during play
+  if(gameScore > highScore && highScore > 0 && !highScoreBeaten) {
+    highScoreBeaten = true;
+    const banner = document.getElementById('highscore-banner');
+    banner.innerHTML = '<span class="rainbow-text">✨ HIGH SCORE! ✨</span>';
+    banner.className = 'show';
+  }
+
+  const comboEl = document.getElementById('combo');
+  if(comboCount >= 2) {
+    comboEl.textContent = `${comboCount} COMBO`;
+    if(comboCount >= 5) comboEl.textContent += ' 🔥';
+    comboEl.className = 'active';
+  } else {
+    comboEl.className = '';
+  }
+}
+
+function showScorePopup(score, matches) {
+  if(score <= 0) return;
+  const avgCol = matches.reduce((s,b)=>s+b.col,0)/matches.length;
+  const avgRow = matches.reduce((s,b)=>s+b.row,0)/matches.length;
+  const el = document.createElement('div');
+  el.className = 'score-popup';
+  el.textContent = '+' + score.toLocaleString();
+  if(comboCount >= 3) el.style.fontSize = '26px';
+  if(comboCount >= 5) el.style.fontSize = '32px';
+  const rect = canvas.getBoundingClientRect();
+  el.style.left = (rect.left + (avgCol+0.5)*cellSize - 30) + 'px';
+  el.style.top = (rect.top + (avgRow+0.5)*cellSize - 30) + 'px';
+  document.getElementById('game-container').appendChild(el);
+  setTimeout(()=>el.remove(), 800);
+}
+
+function showTimePopupAt(bonus, matches) {
+  if(bonus <= 0) return;
+  const avgCol = matches.reduce((s,b)=>s+b.col,0)/matches.length;
+  const avgRow = matches.reduce((s,b)=>s+b.row,0)/matches.length;
+  // Get type color from matched blocks
+  const typeIdx = matches[0] ? matches[0].type : 0;
+  const typeColor = TYPE_PALETTE[typeIdx] ? TYPE_PALETTE[typeIdx][2] : '#4fc3f7';
+  const el = document.createElement('div');
+  el.className = 'time-popup';
+  const rect = canvas.getBoundingClientRect();
+  el.style.left = (rect.left + (avgCol+0.5)*cellSize - 30) + 'px';
+  el.style.top = (rect.top + (avgRow+0.5)*cellSize + 14) + 'px';
+  if(bonus >= 10) {
+    el.innerHTML = '<span class="rainbow-text">+' + bonus + '秒!</span>';
+    el.style.fontSize = '24px';
+  } else {
+    el.textContent = '+' + bonus + '秒';
+    el.style.color = typeColor;
+    el.style.fontSize = '18px';
+  }
+  document.getElementById('game-container').appendChild(el);
+  setTimeout(()=>el.remove(), 1200);
+}
+
+// ===== UTILS =====
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showWiltPenalty(col, row) {
+  const el = document.createElement('div');
+  el.className = 'time-popup';
+  el.textContent = '-5秒';
+  el.style.color = '#e53935';
+  el.style.fontSize = '20px';
+  el.style.fontWeight = '900';
+  const rect = canvas.getBoundingClientRect();
+  el.style.left = (rect.left + (col+0.5)*cellSize - 25) + 'px';
+  el.style.top = (rect.top + (row+0.5)*cellSize) + 'px';
+  document.getElementById('game-container').appendChild(el);
+  setTimeout(()=>el.remove(), 1200);
+}
+
+// ===== ITEM SYSTEM =====
+function showItemSelection() {
+  document.getElementById('item-select').style.display = 'flex';
+  gameRunning = false; // pause
+}
+
+function selectItem(type) {
+  document.getElementById('item-select').style.display = 'none';
+  inventory.push(type);
+  renderItemBar();
+  gameRunning = true;
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+function renderItemBar() {
+  const bar = document.getElementById('item-bar');
+  bar.innerHTML = '';
+  // Group by type
+  const counts = {};
+  inventory.forEach(t => { counts[t] = (counts[t]||0) + 1; });
+  const icons = {vacuum:'🧹', ice:'❄️', bomb:'💣', vortex:'🌀', lightning:'⚡'};
+  const types = Object.keys(counts);
+  types.forEach(type => {
+    const btn = document.createElement('button');
+    btn.className = 'item-inv-btn';
+    if(activeItem === type) btn.className += ' active';
+    btn.innerHTML = icons[type] + '<span class="item-count">×' + counts[type] + '</span>';
+    btn.addEventListener('click', () => {
+      const idx = inventory.indexOf(type);
+      if(type === 'vortex') {
+        gameTime = Math.min(gameTime + 30, MAX_TIME);
+        playVortexSound();
+        const el = document.createElement('div');
+        el.className = 'time-popup';
+        el.innerHTML = '<span class="rainbow-text">🌀 +30秒!</span>';
+        el.style.fontSize = '24px';
+        el.style.left = '50%'; el.style.top = '40%';
+        el.style.transform = 'translateX(-50%)';
+        document.getElementById('game-container').appendChild(el);
+        setTimeout(()=>el.remove(), 1200);
+        inventory.splice(idx, 1);
+        renderItemBar();
+        updateHUD();
+      } else if(type === 'lightning') {
+        useLightning();
+        inventory.splice(idx, 1);
+        renderItemBar();
+      } else {
+        toggleItemMode(type, idx);
+      }
+    });
+    bar.appendChild(btn);
+  });
+}
+
+function toggleItemMode(type, index) {
+  if(activeItem === type && activeItemIndex === index) {
+    cancelItemMode();
+    return;
+  }
+  activeItem = type;
+  activeItemIndex = index;
+  renderItemBar();
+  const hint = document.getElementById('item-mode-hint');
+  const msgs = {vacuum:'枯れた花の範囲をタップ', ice:'凍らせる範囲をタップ', bomb:'破壊する場所をタップ'};
+  hint.textContent = msgs[type];
+  hint.style.display = 'block';
+}
+
+function cancelItemMode() {
+  activeItem = null;
+  activeItemIndex = -1;
+  renderItemBar();
+  document.getElementById('item-mode-hint').style.display = 'none';
+}
+
+function useItemAt(col, row) {
+  if(!activeItem || activeItemIndex < 0) return false;
+
+  if(activeItem === 'vacuum') {
+    // 2×2 area: only remove wilted flowers
+    const startC = Math.min(col, COLS-2);
+    const startR = Math.min(row, ROWS-2);
+    let removed = 0;
+    for(let dc=0; dc<2; dc++) {
+      for(let dr=0; dr<2; dr++) {
+        const c2=startC+dc, r2=startR+dr;
+        const b = grid[c2][r2];
+        if(b && b.isWilted) {
+          spawnParticles(c2, r2, b.type);
+          grid[c2][r2] = null;
+          removed++;
+        }
+      }
+    }
+    if(removed === 0) return false;
+    playVacuumSound();
+    (async()=>{
+      await applyGravity();
+      await fillBoard();
+      if(!hasValidMoves()) { endGame('🚫 手詰まり！'); }
+    })();
+
+  } else if(activeItem === 'ice') {
+    // 4×4 area from tapped cell as top-left (clamped)
+    const startC = Math.min(col, COLS-4);
+    const startR = Math.min(row, ROWS-4);
+    let frozen = 0;
+    for(let dc=0; dc<4; dc++) {
+      for(let dr=0; dr<4; dr++) {
+        const c2=Math.max(0,startC+dc), r2=Math.max(0,startR+dr);
+        if(c2>=COLS||r2>=ROWS) continue;
+        const b = grid[c2][r2];
+        if(b && b.growth < 3) {
+          b.frozenTimer = 60000;
+          frozen++;
+        }
+      }
+    }
+    if(frozen === 0) return false;
+    playIceSound();
+
+  } else if(activeItem === 'bomb') {
+    let destroyed = 0;
+    // 2×2 area: tapped cell is top-left
+    const startC = Math.min(col, COLS-2);
+    const startR = Math.min(row, ROWS-2);
+    for(let dc=0; dc<2; dc++) {
+      for(let dr=0; dr<2; dr++) {
+        const c2=startC+dc, r2=startR+dr;
+        const b = grid[c2][r2];
+        if(b && !b.isWilted) {
+          spawnParticles(c2, r2, b.type);
+          grid[c2][r2] = null;
+          destroyed++;
+        }
+      }
+    }
+    if(destroyed === 0) return false;
+    playBombSound();
+    // No time bonus! Gravity + fill
+    (async()=>{
+      await applyGravity();
+      await fillBoard();
+      if(gameRunning && !hasValidMoves()) { endGame('🚫 手詰まり！'); }
+    })();
+  }
+
+  // Consume item
+  inventory.splice(activeItemIndex, 1);
+  cancelItemMode();
+  return true;
+}
+
+function handleItemTap(px, py) {
+  if(!activeItem) return false;
+  const cell = getCellFromPos(px, py);
+  if(!cell) return false;
+  return useItemAt(cell.col, cell.row);
+}
+
+// ===== AUDIO SYSTEM =====
+let audioCtx;
+let bgmInterval;
+
+function initAudio() {
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playNote(freq, duration, vol, type, delayMs) {
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime + (delayMs||0)/1000;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(freq, t);
+  gain.gain.setValueAtTime(vol||0.08, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+
+function playMatchSound() {
+  playNote(660, 0.15, 0.28, 'sine');
+  playNote(880, 0.15, 0.22, 'sine', 50);
+  playNote(1100, 0.12, 0.15, 'sine', 100);
+}
+
+function playComboSound(level) {
+  // Distinct sparkly chord - higher pitch, different waveform
+  const bases = [784, 988, 1175, 1320, 1568];
+  for(let i=0; i<Math.min(level+1, 6); i++) {
+    const freq = bases[i % bases.length] + level * 30;
+    playNote(freq, 0.2, 0.18, 'sine', i*55);
+    playNote(freq * 1.5, 0.12, 0.08, 'triangle', i*55 + 30);
+  }
+  // Low punch for impact
+  playNote(330, 0.25, 0.15, 'triangle');
+}
+
+function playDeadlockSound() {
+  playNote(400, 0.3, 0.1, 'sawtooth');
+  playNote(300, 0.4, 0.1, 'sawtooth', 200);
+}
+
+function playVacuumSound() {
+  // Suction whoosh: descending sweep
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(800, t);
+  osc.frequency.exponentialRampToValueAtTime(150, t + 0.35);
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.linearRampToValueAtTime(0.2, t + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  osc.start(t); osc.stop(t + 0.4);
+  // Pop at end
+  playNote(500, 0.08, 0.18, 'sine', 280);
+}
+
+function playIceSound() {
+  // Crystallizing: high sparkly cascade
+  playNote(2000, 0.12, 0.12, 'sine');
+  playNote(2400, 0.10, 0.10, 'sine', 50);
+  playNote(1800, 0.14, 0.10, 'sine', 100);
+  playNote(2600, 0.10, 0.08, 'sine', 160);
+  playNote(3000, 0.15, 0.06, 'sine', 220);
+  // Low shimmer
+  playNote(600, 0.4, 0.08, 'triangle');
+}
+
+function playBombSound() {
+  // Explosion: low burst + debris
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Noise burst via oscillator
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(100, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+  gain.gain.setValueAtTime(0.25, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  osc.start(t); osc.stop(t + 0.35);
+  // Impact thud
+  playNote(80, 0.2, 0.2, 'sine');
+  playNote(120, 0.15, 0.15, 'triangle', 30);
+  // Debris scatter
+  playNote(400, 0.08, 0.1, 'square', 100);
+  playNote(550, 0.06, 0.08, 'square', 150);
+  playNote(350, 0.07, 0.08, 'square', 200);
+}
+
+function playVortexSound() {
+  // Swirling rewind: ascending spiral
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.exponentialRampToValueAtTime(1200, t + 0.4);
+  osc.frequency.exponentialRampToValueAtTime(600, t + 0.6);
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.linearRampToValueAtTime(0.2, t + 0.2);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+  osc.start(t); osc.stop(t + 0.65);
+  playNote(800, 0.15, 0.08, 'triangle', 150);
+  playNote(1000, 0.12, 0.06, 'triangle', 250);
+  playNote(1200, 0.10, 0.05, 'triangle', 350);
+}
+
+function playLightningSound() {
+  if(!audioCtx) return;
+  // Electric crack
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(2000, t);
+  osc.frequency.exponentialRampToValueAtTime(80, t + 0.15);
+  gain.gain.setValueAtTime(0.25, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  osc.start(t); osc.stop(t + 0.2);
+  // Crackle hits
+  playNote(1500, 0.05, 0.15, 'square', 50);
+  playNote(800, 0.06, 0.12, 'square', 100);
+  playNote(1200, 0.04, 0.1, 'square', 160);
+  // Thunder rumble
+  playNote(60, 0.4, 0.15, 'triangle', 180);
+}
+
+function useLightning() {
+  // Randomly destroy 3-5 blocks (including wilted)
+  const count = 3 + Math.floor(Math.random()*3); // 3,4, or 5
+  const candidates = [];
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS; r++) {
+      if(grid[c][r] && !grid[c][r].removing) candidates.push({c,r});
+    }
+  }
+  // Shuffle candidates
+  for(let i=candidates.length-1; i>0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const targets = candidates.slice(0, Math.min(count, candidates.length));
+  playLightningSound();
+  for(const t of targets) {
+    const b = grid[t.c][t.r];
+    spawnParticles(t.c, t.r, b.type);
+    grid[t.c][t.r] = null;
+  }
+  // Show popup
+  const el = document.createElement('div');
+  el.className = 'score-popup';
+  el.textContent = '⚡ ' + targets.length + '個破壊!';
+  el.style.left = '50%'; el.style.top = '40%';
+  el.style.transform = 'translateX(-50%)';
+  el.style.color = '#f57f17';
+  document.getElementById('game-container').appendChild(el);
+  setTimeout(()=>el.remove(), 1000);
+  // Gravity + fill
+  (async()=>{
+    await applyGravity();
+    await fillBoard();
+    await delay(200);
+    await processMatches();
+  })();
+}
+
+function startBGM() {
+  if(bgmInterval) clearInterval(bgmInterval);
+  const melody = [
+    523,587,659,784, 659,587,523,0,
+    659,698,784,880, 784,698,659,0,
+    523,659,784,1047, 784,659,523,0,
+    440,523,587,659, 523,440,392,0
+  ];
+  let i=0;
+  bgmInterval = setInterval(()=>{
+    if(!gameRunning){stopBGM();return;}
+    const f=melody[i%melody.length];
+    if(f>0) playNote(f, 0.18, 0.035, 'sine');
+    i++;
+  }, 220);
+}
+
+function stopBGM() {
+  if(bgmInterval){clearInterval(bgmInterval);bgmInterval=null;}
+}
+
+// ===== LEGEND RENDERING =====
+function renderLegend() {
+  const pal = TYPE_PALETTE[0]; // Use rose colors for demo
+  // Sprout
+  const c1 = document.getElementById('leg-sprout');
+  if(c1) { const x=c1.getContext('2d'); x.clearRect(0,0,20,20);
+    x.strokeStyle='#4a8a3f'; x.lineWidth=2; x.lineCap='round';
+    x.beginPath(); x.moveTo(10,10); x.lineTo(10,17); x.stroke();
+    x.fillStyle=pal[1];
+    x.save(); x.translate(10,10); x.rotate(-2.2);
+    x.beginPath(); x.moveTo(0,0); x.quadraticCurveTo(4,-3,8,0); x.quadraticCurveTo(4,3,0,0); x.fill();
+    x.restore();
+    x.save(); x.translate(10,10); x.rotate(-0.92);
+    x.beginPath(); x.moveTo(0,0); x.quadraticCurveTo(4,-3,8,0); x.quadraticCurveTo(4,3,0,0); x.fill();
+    x.restore();
+  }
+  // Leaf
+  const c2 = document.getElementById('leg-leaf');
+  if(c2) { const x=c2.getContext('2d'); x.clearRect(0,0,20,20);
+    x.fillStyle=pal[1];
+    for(let i=0;i<4;i++){
+      const a=(i/4)*Math.PI*2+Math.PI/4;
+      x.save(); x.translate(10,10); x.rotate(a);
+      x.beginPath(); x.moveTo(0,0); x.quadraticCurveTo(3,-3,7,0); x.quadraticCurveTo(3,3,0,0); x.fill();
+      x.restore();
+    }
+  }
+  // Flower
+  const c3 = document.getElementById('leg-flower');
+  if(c3) { const x=c3.getContext('2d'); x.clearRect(0,0,20,20);
+    x.fillStyle=pal[2];
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2;
+      const px=10+Math.cos(a)*4, py=10+Math.sin(a)*4;
+      x.beginPath(); x.ellipse(px,py,3,2.5,a,0,Math.PI*2); x.fill();
+    }
+    x.fillStyle=pal[3];
+    x.beginPath(); x.arc(10,10,2.5,0,Math.PI*2); x.fill();
+  }
+  // Wilted
+  const c4 = document.getElementById('leg-wilted');
+  if(c4) { const x=c4.getContext('2d'); x.clearRect(0,0,20,20);
+    x.fillStyle='#5a4a3a';
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2;
+      const px=10+Math.cos(a)*3.5, py=10+Math.sin(a)*3.5+1;
+      x.beginPath(); x.ellipse(px,py,2.5,2,a,0,Math.PI*2); x.fill();
+    }
+    x.strokeStyle='rgba(255,60,60,0.7)'; x.lineWidth=1.5;
+    const s=3;
+    x.beginPath(); x.moveTo(10-s,10-s); x.lineTo(10+s,10+s); x.stroke();
+    x.beginPath(); x.moveTo(10+s,10-s); x.lineTo(10-s,10+s); x.stroke();
+  }
+}
+
+// ===== DEADLOCK DETECTION =====
+function hasValidMoves() {
+  for(let c=0; c<COLS; c++) {
+    for(let r=0; r<ROWS; r++) {
+      const a = grid[c][r];
+      if(!a || a.isWilted || a.removing) continue;
+      // Try swap right
+      if(c < COLS-1) {
+        const b = grid[c+1][r];
+        if(b && !b.isWilted && !b.removing) {
+          grid[c][r]=b; grid[c+1][r]=a;
+          b.col=c; a.col=c+1;
+          const ok = findMatches().length > 0;
+          grid[c][r]=a; grid[c+1][r]=b;
+          a.col=c; b.col=c+1;
+          if(ok) return true;
+        }
+      }
+      // Try swap down
+      if(r < ROWS-1) {
+        const b = grid[c][r+1];
+        if(b && !b.isWilted && !b.removing) {
+          grid[c][r]=b; grid[c][r+1]=a;
+          b.row=r; a.row=r+1;
+          const ok = findMatches().length > 0;
+          grid[c][r]=a; grid[c][r+1]=b;
+          a.row=r; b.row=r+1;
+          if(ok) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// ===== START =====
+init();
+</script>
+</body>
+</html>
